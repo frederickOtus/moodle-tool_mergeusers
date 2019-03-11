@@ -40,7 +40,11 @@ list($options, $unrecognized) = cli_get_params(
         'debugdb'    => false,
         'alwaysRollback' => false,
         'help'    => false,
-    )
+        'file'    => false,
+        'toid'    => false,
+        'fromid'    => false,
+    ), 
+    array('h'=>'help')
 );
 
 if ($unrecognized) {
@@ -50,16 +54,32 @@ if ($unrecognized) {
 
 if ($options['help']) {
     $help =
-        "Command Line user merger. These are the available options:
+        "Command Line user merger. There are three ways to merge users
+    -fromid/toid args: If this is done, a single merge happens off those arguments and the script ends
+    -file: Takes a path to a file that has all of the users you want to merge
+    -default: if neither preceeding is provided, you will be provided a REPL for merging
+
+These are the available options:
 
 Options:
 --help            Print out this help
 --debugdb         Output all db statements used to do the merge
 --alwaysRollback  Do the full merge but rollback the transaction at the last opportunity
+--fromid          ID of user to merge
+--toid            ID of user that is merged into
+--file            path to file of id pairs. Each line of file should be <FROMID>,<TOID>
 ";
 
     echo $help;
     exit(0);
+}
+
+if($options['toid'] xor $options['fromid']){
+    cli_error('You must provide both ids if you are going to use id cli args');
+}
+
+if($options['file'] && $options['toid']){
+    cli_error('Use file or id args, not both');
 }
 
 // loads current configuration
@@ -71,6 +91,27 @@ $config->alwaysRollback = !empty($options['alwaysRollback']);
 // initializes merger tool
 $mut = new MergeUserTool($config); //may abort execution if database is not supported
 $merger = new Merger($mut);
+
+if($options['toid']){
+    list($success, $log, $id) = $mut->merge($options['toid'], $options['fromid']);
+    echo (($success)?get_string("success"):get_string("error")) . ". Log id: " . $id . "\n\n";
+    exit(0); // if arrived here, all ok ;-)
+}
+
+if($options['file']){
+    if(!is_file($options['file'])){
+        cli_error('File "' . $options['file'] . '" does not exist');
+    }
+
+    $contents = file($options['file']);
+    foreach($contents as $line){
+        list($fromid, $toid) = explode(',', trim($line));
+        list($success, $log, $id) = $mut->merge($toid, $fromid);
+        echo (($success)?get_string("success"):get_string("error")) . ". Log id: " . $id . "\n\n";
+    }
+    exit(0);
+}
+
 
 // initializes gathering instance
 $gatheringname = $config->gathering;
